@@ -37,7 +37,73 @@ class ViewController: UIViewController {
         self.dispatchGroup_EnterAndLeave_Concurrent()
     }
     
-    // -------------------使用队列组模拟三个下载任务--------------------
+    //MARK: -------------------使用信号量进行加锁操作--------------------
+    func test_semaphore() {
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
+            self.tast_first()
+        }
+        
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
+            self.tast_second()
+        }
+        
+        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
+            self.tast_third()
+        }
+    }
+    
+    func tast_first() {
+        dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER)
+        print("First tast starting")
+        sleep(1)
+        NSLog("%@", "First task is done")
+        dispatch_semaphore_signal(self.semaphore)
+    }
+    
+    func tast_second() {
+        dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER)
+        print("Second tast starting")
+        sleep(1)
+        NSLog("%@", "Second task is done")
+        dispatch_semaphore_signal(self.semaphore)
+    }
+    
+    func tast_third() {
+        dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER)
+        print("Third tast starting")
+        sleep(1)
+        NSLog("%@", "Thrid task is done")
+        dispatch_semaphore_signal(self.semaphore)
+    }
+    
+    //MARK: -------------------dispatch_apply 的使用--------------------
+    func dispatchApply() {
+        
+        self.testPerformance { () -> () in
+            dispatch_apply(50, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { (index: Int) -> Void in
+                print(index)
+                print(NSThread.currentThread())
+            }
+            NSLog("Dispatch_after is over")
+        }
+        
+        self.testPerformance { () -> () in
+            for i:Int in 1...50 {
+                print(i)
+                print(NSThread.currentThread())
+            }
+        }
+        
+    }
+    
+    //MARK: -------------------dispatch_after 的使用--------------------
+    func dispatchAfter() {
+        let delay: dispatch_time_t = dispatch_time(DISPATCH_TIME_NOW, Int64(5 * Double(NSEC_PER_SEC)))
+        dispatch_after(delay, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
+            print("viewDidLoad()")
+        }
+    }
+    //MARK: -------------------使用队列组模拟三个下载任务--------------------
     func dispatchGroup() {
         let group: dispatch_group_t = dispatch_group_create()
         
@@ -77,76 +143,8 @@ class ViewController: UIViewController {
             print("Now viewDidLoad is done")
         }
     }
-
-    // -------------------dispatch_apply 的使用--------------------
-    func dispatchApply() {
-
-        self.testPerformance { () -> () in
-            dispatch_apply(50, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { (index: Int) -> Void in
-                print(index)
-                print(NSThread.currentThread())
-            }
-            NSLog("Dispatch_after is over")
-        }
-        
-        self.testPerformance { () -> () in
-            for i:Int in 1...50 {
-                print(i)
-                print(NSThread.currentThread())
-            }
-        }
-        
-    }
     
-    // -------------------dispatch_after 的使用--------------------
-    func dispatchAfter() {
-        let delay: dispatch_time_t = dispatch_time(DISPATCH_TIME_NOW, Int64(5 * Double(NSEC_PER_SEC)))
-        dispatch_after(delay, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
-            print("viewDidLoad()")
-        }
-    }
-    
-    // -------------------使用信号量进行加锁操作--------------------
-    func test_semaphore() {
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
-            self.tast_first()
-        }
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
-            self.tast_second()
-        }
-        
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
-            self.tast_third()
-        }
-    }
-    
-    func tast_first() {
-        dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER)
-        print("First tast starting")
-        sleep(1)
-        NSLog("%@", "First task is done")
-        dispatch_semaphore_signal(self.semaphore)
-    }
-    
-    func tast_second() {
-        dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER)
-        print("Second tast starting")
-        sleep(1)
-        NSLog("%@", "Second task is done")
-        dispatch_semaphore_signal(self.semaphore)
-    }
-    
-    func tast_third() {
-        dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER)
-        print("Third tast starting")
-        sleep(1)
-        NSLog("%@", "Thrid task is done")
-        dispatch_semaphore_signal(self.semaphore)
-    }
-    
-    
-    // ------------------- dispatch_group_enter / dispatch_group_leave -------------------
+    //MARK: ------------------- dispatch_group_enter / dispatch_group_leave -------------------
     // 将任务组中的任务未执行完毕的任务数目加减1，这种方式不使用 dispatch_group_async 来提交任务，注意：这两个函数要配合使用，有enter要有leave，这样才能保证功能完整实现。
 
     // 串行执行三个任务
