@@ -11,7 +11,7 @@ import UIKit
 
 class ViewController: UIViewController {
     
-    var semaphore: dispatch_semaphore_t;
+    var semaphore: dispatch_semaphore_t
     
     required init?(coder aDecoder: NSCoder) {
         self.semaphore = dispatch_semaphore_create(1)
@@ -21,23 +21,47 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // 1. semaphore
 //        self.test_semaphore()
         
-        // 2. dispatch_after
 //        self.dispatchAfter()
         
-        // 3. dispatch_apply————相当于异步的for循环，值不过所有循环都是异步执行的
-//        self.dispatchApply()
+        self.dispatchApply()
         
-        // 4. dispatch_group
 //        self.dispatchGroup()
         
-        // 5. dispatch_group_enter/dispatch_group_leave
-        self.dispatchGroup_EnterAndLeave_Concurrent()
+//        self.dispatchGroup_EnterAndLeave_Concurrent()
+        
+//        self.test_gcdTimer()
+        
+//        self.test_mutiThread()
+//        testFunctionPerformance("test_mutiThread")
+    }
+
+    //MARK: ------------------- 使用 GCD 定时器 --------------------
+    func test_gcdTimer() {
+        
+        let mainQueue: dispatch_queue_t = dispatch_get_main_queue();
+        
+        // 两秒后开始定时器，没秒执行1次，精度为2。
+        let startTime: dispatch_time_t = dispatch_time(DISPATCH_TIME_NOW, 2)
+        let interval: UInt64 = 1
+        let leeway: UInt64 = 2 //精度
+        
+        let timer: dispatch_source_t = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, mainQueue)
+        dispatch_source_set_timer(timer, startTime, interval * NSEC_PER_SEC, leeway * NSEC_PER_SEC)
+        dispatch_source_set_event_handler(timer) { () -> Void in
+            print("Timer event")
+        }
+        dispatch_resume(timer)
+        
+        // 10秒后取消定时器
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (Int64)(6 * NSEC_PER_SEC)), mainQueue) { () -> Void in
+            dispatch_source_cancel(timer)
+        }
     }
     
-    //MARK: -------------------使用信号量进行加锁操作--------------------
+    
+    //MARK: ------------------- 使用信号量进行加锁操作 --------------------
     func test_semaphore() {
         dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
             self.tast_first()
@@ -53,10 +77,14 @@ class ViewController: UIViewController {
     }
     
     func tast_first() {
+        // p操作，进入临界区
         dispatch_semaphore_wait(self.semaphore, DISPATCH_TIME_FOREVER)
+
         print("First tast starting")
         sleep(1)
         NSLog("%@", "First task is done")
+        
+        // v操作，离开临界区
         dispatch_semaphore_signal(self.semaphore)
     }
     
@@ -76,34 +104,56 @@ class ViewController: UIViewController {
         dispatch_semaphore_signal(self.semaphore)
     }
     
-    //MARK: -------------------dispatch_apply 的使用--------------------
-    func dispatchApply() {
+    //MARK: ------------------- 多线程测试 --------------------
+    // 详细参见：http://www.dreamingwish.com/article/gcd-practice-io-race.html
+    func test_mutiThread() {
+        let userSerialQueue = dispatch_queue_create("com.test.mutiThread.userSerialQueue", DISPATCH_QUEUE_SERIAL)
+        let globalQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)
+        let group = dispatch_group_create()
         
-        self.testPerformance { () -> () in
-            dispatch_apply(50, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { (index: Int) -> Void in
-                print(index)
-                print(NSThread.currentThread())
-            }
-            NSLog("Dispatch_after is over")
+        // 当 "Processing data"（CUP处理速度） 速度远小于 "Reading file"（磁盘处理速度） 速度时，线程数占用过多
+        // 使用信号量来限制同时执行的任务的数量
+        
+        let cupCount = NSProcessInfo.processInfo().processorCount // CPU 数量
+        let jobSemaphore = dispatch_semaphore_create(cupCount * 2) // 限制线程个数
+        
+        for i:Int in 1...50 {
+            
+            dispatch_semaphore_wait(jobSemaphore, DISPATCH_TIME_FOREVER);
+            
+            dispatch_group_async(group, userSerialQueue, { () -> Void in  // 由于磁盘访问无法并发执行且速度较慢，放在串行队列中比较好
+                
+                print("Reading file", i, NSThread.currentThread())
+                //                sleep(2)
+                
+                dispatch_group_async(group, globalQueue, { () -> Void in
+                    print("  Processing data", i, NSThread.currentThread())
+                    sleep(1)
+                    
+                    dispatch_group_async(group, userSerialQueue, { () -> Void in
+                        print("    writing file", i, NSThread.currentThread())
+                        //                        sleep(2)
+                        
+                        dispatch_semaphore_signal(jobSemaphore);
+                    })
+                })
+                
+            })
         }
         
-        self.testPerformance { () -> () in
-            for i:Int in 1...50 {
-                print(i)
-                print(NSThread.currentThread())
-            }
-        }
+        dispatch_group_wait(group, DISPATCH_TIME_FOREVER)
         
     }
     
-    //MARK: -------------------dispatch_after 的使用--------------------
+    //MARK: ------------------- dispatch_after 的使用--------------------
     func dispatchAfter() {
         let delay: dispatch_time_t = dispatch_time(DISPATCH_TIME_NOW, Int64(5 * Double(NSEC_PER_SEC)))
         dispatch_after(delay, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) { () -> Void in
             print("viewDidLoad()")
         }
     }
-    //MARK: -------------------使用队列组模拟三个下载任务--------------------
+    
+    //MARK: ------------------- 多任务异步执行 与 dispatch_group_notify 的使用 --------------------
     func dispatchGroup() {
         let group: dispatch_group_t = dispatch_group_create()
         
@@ -136,7 +186,7 @@ class ViewController: UIViewController {
             NSLog("Group tasks are done")
         }
         
-        // 设置等待时间，在等待时间结束后，如果还没有执行完任务组，则返回。返回0代表执行成功，非0则执行失败
+        // 设置等待时间(即设置超时)，在等待时间结束后，如果还没有执行完任务组，则返回。返回0代表执行成功，非0则执行失败
         // 等待直到完成
         let result = dispatch_group_wait(group, DISPATCH_TIME_FOREVER)
         if (result != 0) {
@@ -144,8 +194,45 @@ class ViewController: UIViewController {
         }
     }
     
+    //MARK: ------------------- 多任务异步执行/同步执行 与 dispatch_apply 的使用 --------------------
+    func dispatchApply() {
+
+        let iterations: Int = 20 // 迭代次数
+        let globalQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)
+        
+        // 同步执行
+        self.testPerformance { () -> () in
+            dispatch_apply(iterations, globalQueue) { (index: Int) -> Void in
+                print(index, NSThread.currentThread())
+            }
+            NSLog("iterations is over")
+        }
+        
+        print("------------------------------------")
+        
+        // 异步执行
+        self.testPerformance { () -> () in
+            dispatch_apply(iterations, globalQueue, { (index: Int) -> Void in
+                dispatch_async(globalQueue, { () -> Void in
+                    print(index, NSThread.currentThread())
+                })
+            })
+            NSLog("iterations is over")
+        }
+        
+        print("------------------------------------")
+        
+        self.testPerformance { () -> () in
+            for i:Int in 1...iterations {
+                print(i, NSThread.currentThread())
+            }
+        }
+        
+    }
+    
     //MARK: ------------------- dispatch_group_enter / dispatch_group_leave -------------------
-    // 将任务组中的任务未执行完毕的任务数目加减1，这种方式不使用 dispatch_group_async 来提交任务，注意：这两个函数要配合使用，有enter要有leave，这样才能保证功能完整实现。
+    // 将任务组中的任务未执行完毕的任务数目加减1，这种方式不使用 dispatch_group_async 来提交任务，
+    // 注意：这两个函数要配合使用，有enter要有leave，这样才能保证功能完整实现。
 
     // 串行执行三个任务
     func dispatchGroup_EnterAndLeave_Seriel() {
@@ -199,6 +286,13 @@ class ViewController: UIViewController {
     func testPerformance(closure: ()->()) {
         let startTime: dispatch_time_t = dispatch_time(DISPATCH_TIME_NOW, 0)
         closure()
+        let endTime: dispatch_time_t = dispatch_time(DISPATCH_TIME_NOW, 0)
+        print(endTime - startTime)
+    }
+    
+    func testFunctionPerformance(selector: Selector) {
+        let startTime: dispatch_time_t = dispatch_time(DISPATCH_TIME_NOW, 0)
+        self.performSelector(selector)
         let endTime: dispatch_time_t = dispatch_time(DISPATCH_TIME_NOW, 0)
         print(endTime - startTime)
     }
